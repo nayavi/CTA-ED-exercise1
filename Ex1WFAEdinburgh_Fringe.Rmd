@@ -1,0 +1,140 @@
+---
+title: "WFAEx1CTA2024-02-06"
+output: html_document
+date: "2024-02-06"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r packages}
+library(tidyverse)
+library(tidytext) # note: not in tidyverse
+library(ggthemes)
+library(readr) #new way to import data
+library(babynames) #for gender predictions
+library("dplyr") 
+library(magrittr)
+```
+
+##R Data
+
+```{r dataimport}
+edbfdata <- read_csv("https://raw.githubusercontent.com/cjbarrie/RDL-Ed/main/02-text-as-data/data/edbookfestall.csv")
+
+```
+First we check what we need, looking at the column names, and selecting relevant columns. 
+
+````{r takedata}
+
+colnames(edbfdata)
+event_desc<-edbfdata %>%
+  select(description, year)
+colnames(event_desc)
+
+````
+
+We then find the number of events per year and plot it in ggplot: Note the use of "summarise" to create a new summary variable.
+
+```{r plot}
+
+events_year<-event_desc%>%
+  mutate(obs=1) %>%
+  group_by(year)%>%
+  summarise(sum_events=sum(obs))
+  
+ggplot(events_year)+
+  geom_line(aes(year,sum_events))+
+    scale_y_continuous(expand = c(0, 0), limits = c(0, NA))
+
+````
+
+We are now going to tidy the text to get rid of html/php encodings as wella s punctuation, and stopwords
+```{r tidytext}
+
+tidy_des <- event_desc %>% 
+  mutate(desc = tolower(description)) %>%
+  unnest_tokens(word, desc) %>%
+  filter(str_detect(word, "[a-z]"))%>%
+  filter(!word %in% stop_words$word)
+
+tidy_words1<-tidy_des%>%
+  count(word, sort = TRUE)%>%
+  head()
+
+
+
+```
+
+Using "head" we can see we need to take out rsquo, (which is an html encoding (for apostrophes)). however, there remain some encodings - we must deal with those as well.
+
+```{r apostrophes}
+
+tidy_des %>%
+ filter(!word %in% c("rsquo"))%>%
+head()
+
+remove_reg <- c("&amp;","&lt;","&gt;","<p>", "</p>","&rsquo", "&lsquo;",  "&#39;", "<strong>", "</strong>", "rsquo", "em", "ndash", "nbsp", "lsquo", "strong")
+                  
+
+tidy_des %>%
+ filter(!word %in% remove_reg)%>%
+head()
+
+tidy_des_words <- tidy_des %>%
+  filter(!word %in% remove_reg)%>%
+  count(word, sort = TRUE) %>%
+  head()
+
+
+````
+
+Ok, now we have our words:
+
+```{r counts}
+
+edbf_term_counts <- tidy_des %>% 
+  group_by(year) %>%
+  count(word, sort = TRUE)
+
+head(edbf_term_counts)
+
+````
+```{r changelistterm}
+edbf_term_counts$womword <- as.integer(grepl("women|feminist|feminism|gender|harassment|sexism|sexist", x = edbf_term_counts$word))
+
+head(edbf_term_counts)
+
+```
+
+````{r yearcounts}
+edbf_counts <- edbf_term_counts %>%
+  group_by(year) %>%
+  mutate(year_total = sum(n)) %>%
+  filter(womword==1) %>%
+  summarise(sum_wom = sum(n),
+            year_total= min(year_total))
+
+head(edbf_counts)
+
+```
+
+
+
+```{r timetrends}
+ggplot(edbf_counts, aes(year, sum_wom / year_total, group=1)) +
+  geom_line() +
+  geom_vline(xintercept = 2017, col="red")+
+  geom_text(aes(x=2017.1, label="#metoo year", y=.0015),
+            colour="black",angle=90, text=element_text(size=8))+
+  xlab("Year") +
+  ylab("% gender-related words") +
+  scale_y_continuous(labels = scales::percent_format(),
+                     expand = c(0, 0), limits = c(0, NA)) +
+  theme_tufte(base_family = "Helvetica") 
+````
+
+
+
